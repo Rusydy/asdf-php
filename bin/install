@@ -6,6 +6,36 @@ PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Setup php-build
 PHP_BUILD_ROOT="$PLUGIN_DIR/vendor/php-build"
+
+# Check if php-build exists, if not try to initialize submodule
+if [ ! -f "$PHP_BUILD_ROOT/bin/php-build" ]; then
+  echo "php-build not found, attempting to initialize submodule..."
+
+  # Try to initialize the submodule if we're in a git repository
+  if [ -d "$PLUGIN_DIR/.git" ] || [ -f "$PLUGIN_DIR/.git" ]; then
+    (
+      cd "$PLUGIN_DIR"
+      git submodule update --init --recursive vendor/php-build
+    )
+  fi
+
+  # Check again after submodule init
+  if [ ! -f "$PHP_BUILD_ROOT/bin/php-build" ]; then
+    echo "Error: php-build not found at $PHP_BUILD_ROOT"
+    echo ""
+    echo "This plugin requires php-build to be available."
+    echo ""
+    echo "If you cloned this plugin, run:"
+    echo "  cd $PLUGIN_DIR"
+    echo "  git submodule update --init --recursive"
+    echo ""
+    echo "If you used 'asdf plugin add php <local-path>', please reinstall using:"
+    echo "  asdf plugin remove php"
+    echo "  asdf plugin add php https://github.com/asdf-community/asdf-php.git"
+    exit 1
+  fi
+fi
+
 export PATH="$PHP_BUILD_ROOT/bin:$PATH"
 
 # Extract version from ASDF variables
@@ -16,6 +46,14 @@ install_path="${ASDF_INSTALL_PATH}"
 if [ "$version" = "latest" ]; then
   version=$("${PLUGIN_DIR}/bin/latest-stable")
   echo "Resolved 'latest' to version $version"
+fi
+
+# Disable Xdebug by default (prevents build failures)
+# Users can enable by setting PHP_BUILD_XDEBUG_ENABLE=on
+if [ -z "$PHP_BUILD_XDEBUG_ENABLE" ]; then
+  export PHP_BUILD_XDEBUG_ENABLE=off
+  echo "Note: Xdebug auto-install disabled (prevents build issues)"
+  echo "      To install Xdebug, set: PHP_WITH_XDEBUG=yes"
 fi
 
 # Pass through custom configure options
@@ -74,7 +112,50 @@ if [ ! -f "$install_path/conf.d/php.ini" ]; then
   echo "# Add custom PHP configuration here" > "$install_path/conf.d/php.ini"
 fi
 
+# Install Xdebug if requested
+install_xdebug() {
+  local bin_path="$install_path/bin"
+  local pecl_path="$bin_path/pecl"
+
+  echo ""
+  echo "Installing Xdebug via PECL..."
+
+  if ! command -v "$pecl_path" &> /dev/null; then
+    echo "⚠ PECL not found, skipping Xdebug installation"
+    echo "  Install manually with: pecl install xdebug"
+    return 1
+  fi
+
+  # Install xdebug
+  if "$pecl_path" install xdebug 2>&1; then
+    # Enable xdebug
+    echo "zend_extension=xdebug.so" >> "$install_path/conf.d/xdebug.ini"
+    echo "xdebug.mode=debug" >> "$install_path/conf.d/xdebug.ini"
+    echo "✓ Xdebug installed and enabled"
+    echo "  Config: $install_path/conf.d/xdebug.ini"
+  else
+    echo "⚠ Xdebug installation failed"
+    echo "  Install manually with: pecl install xdebug"
+    return 1
+  fi
+}
+
+# Check if user wants Xdebug installed
+if [ "${PHP_WITH_XDEBUG:-no}" != "no" ]; then
+  install_xdebug || true
+fi
+
 echo ""
 echo "Installation complete!"
 echo "PHP installed at: $install_path"
 echo "Add custom PHP settings to: $install_path/conf.d/php.ini"
+
+# Show helpful tips
+if [ "${PHP_WITH_XDEBUG:-no}" = "no" ]; then
+  echo ""
+  echo "Tip: To install Xdebug, run:"
+  echo "  PHP_WITH_XDEBUG=yes asdf install php $version"
+  echo "Or install manually:"
+  echo "  pecl install xdebug"
+  echo "  echo 'zend_extension=xdebug.so' >> $install_path/conf.d/xdebug.ini"
+fi
