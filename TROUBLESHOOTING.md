@@ -104,6 +104,54 @@ asdf install php 8.5.0
 
 ---
 
+### Issue: PHP 8.0.0 fails with OpenSSL 3.x compatibility errors
+
+**Error:**
+```
+warning: passing argument 4 of 'RSA_public_decrypt' discards 'const' qualifier from pointer target type
+/usr/include/openssl/rsa.h:300:29: note: expected 'RSA *' but argument is of type 'const struct rsa_st *'
+```
+
+**Cause:** PHP 8.0.0 (and other old PHP versions) were built for OpenSSL 1.x. AlmaLinux 10 and other modern distributions use OpenSSL 3.x, which has breaking API changes.
+
+**Solution 1: Use Latest Patch Version (Recommended)**
+```bash
+# Instead of 8.0.0, use the latest 8.0.x which has OpenSSL 3 support
+asdf install php 8.0.30
+
+# Or get latest 8.0 automatically
+asdf install php latest:8.0
+```
+
+**Solution 2: Use Supported PHP Versions**
+```bash
+# PHP 8.0 reached End of Life on November 26, 2023
+# Use actively supported versions:
+
+asdf install php 8.5.0   # Latest stable
+asdf install php 8.3.14  # Active support
+asdf install php 8.2.27  # Security fixes only
+```
+
+**Why This Happens:**
+- PHP 8.0.0 released: December 2020 (OpenSSL 1.x era)
+- OpenSSL 3.0 released: September 2021 (breaking changes)
+- PHP 8.0.30 released: August 2023 (with OpenSSL 3 fixes)
+- AlmaLinux 10 uses: OpenSSL 3.x (incompatible with old PHP)
+
+**PHP Version Support Status:**
+
+| Version | Status | End of Life | Recommendation |
+|---------|--------|-------------|----------------|
+| PHP 8.5.x | ✅ Active | Nov 2027 | Use for new projects |
+| PHP 8.3.x | ✅ Active | Nov 2026 | Current stable |
+| PHP 8.2.x | ⚠️ Security | Dec 2025 | Upgrade soon |
+| PHP 8.1.x | ⚠️ Security | Nov 2025 | Upgrade soon |
+| PHP 8.0.x | ❌ EOL | Nov 2023 | Do not use |
+| PHP 7.4.x | ❌ EOL | Nov 2022 | Do not use |
+
+---
+
 ### Issue: Cannot find libtidy
 
 **Error:**
