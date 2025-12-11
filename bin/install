@@ -205,11 +205,37 @@ patch_php_build_definitions() {
   local php_patch=$(echo "$php_version" | cut -d. -f3 | sed 's/[^0-9].*//')
   local php_build_patches="$PHP_BUILD_ROOT/share/php-build/patches"
   local definitions_dir="$PHP_BUILD_ROOT/share/php-build/definitions"
+  local def_file="$definitions_dir/$php_version"
+
+  # Add libxml2 2.12+ and ICU 74+ compatibility patches for PHP 7.4
+  if [ "$php_major" -eq 7 ] && [ "$php_minor" -eq 4 ]; then
+    # libxml2 2.12+ patch (php-build already has it)
+    if [ -f "$def_file" ] && ! grep -q "php-7.4-libxml2-2.12.patch" "$def_file"; then
+      # Add after the last patch_file line, or before install_package if no patches exist
+      if grep -q "patch_file" "$def_file"; then
+        # Find the last patch_file line and add after it
+        local last_patch_line=$(grep -n "patch_file" "$def_file" | tail -1 | cut -d: -f1)
+        sed -i "${last_patch_line}a patch_file \"php-7.4-libxml2-2.12.patch\"" "$def_file"
+      else
+        # Add before install_package
+        sed -i '/^install_package/i patch_file "php-7.4-libxml2-2.12.patch"\n' "$def_file"
+      fi
+      echo "Added libxml2 compatibility patch to PHP $php_version definition"
+    fi
+
+    # ICU 74+ patch (custom patch from plugin)
+    if [ -f "${PLUGIN_DIR}/patches/php-7.4-icu-74-compat.patch" ]; then
+      cp "${PLUGIN_DIR}/patches/php-7.4-icu-74-compat.patch" "$php_build_patches/"
+      if [ -f "$def_file" ] && ! grep -q "php-7.4-icu-74-compat.patch" "$def_file"; then
+        local last_patch_line=$(grep -n "patch_file" "$def_file" | tail -1 | cut -d: -f1)
+        sed -i "${last_patch_line}a patch_file \"php-7.4-icu-74-compat.patch\"" "$def_file"
+        echo "Added ICU 74+ compatibility patch to PHP $php_version definition"
+      fi
+    fi
+  fi
 
   # Add libxml2 2.12+ and ICU 74+ compatibility patches for PHP 8.0.0-8.0.19
   if [ "$php_major" -eq 8 ] && [ "$php_minor" -eq 0 ] && [ "$php_patch" -lt 20 ]; then
-    local def_file="$definitions_dir/$php_version"
-
     # libxml2 2.12+ patch
     if [ -f "${PLUGIN_DIR}/patches/php-8.0-libxml2-2.12-compat.patch" ]; then
       cp "${PLUGIN_DIR}/patches/php-8.0-libxml2-2.12-compat.patch" "$php_build_patches/"
