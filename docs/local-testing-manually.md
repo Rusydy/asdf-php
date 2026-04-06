@@ -5,9 +5,9 @@ Below are the steps to install different versions of PHP using asdf in local env
 ## install latest
 
 ```bash
-asdf uninstall php latest # currently 8.3.29 as of 2025-12-26
+asdf uninstall php latest # currently 8.5.4 as of 2026-04-07
 asdf plugin remove php
-ln -s /home/dev/Documents/asdf-community/asdf-php ~/.asdf/plugins/php
+asdf plugin add php $(pwd)
 asdf install php latest
 ```
 
