@@ -48,6 +48,42 @@ if [ "$version" = "latest" ]; then
   echo "Resolved 'latest' to version $version"
 fi
 
+# Configure macOS-specific dependencies for all PHP versions
+setup_macos_dependencies() {
+  local php_version=$1
+
+  # Only apply on macOS
+  if [[ $OSTYPE != "darwin"* ]]; then
+    return 0
+  fi
+
+  # Check if Homebrew is available
+  if ! command -v brew &>/dev/null; then
+    return 0
+  fi
+
+  local brew_prefix
+  brew_prefix=$(brew --prefix)
+  local bzip2_prefix
+  bzip2_prefix=$(brew --prefix bzip2 2>/dev/null || echo "")
+  local iconv_prefix
+  iconv_prefix=$(brew --prefix libiconv 2>/dev/null || echo "")
+
+  # Configure bzip2 if available
+  if [ -n "$bzip2_prefix" ] && [ -d "$bzip2_prefix" ]; then
+    export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --with-bz2=${bzip2_prefix}"
+  fi
+
+  # Configure libiconv if available
+  if [ -n "$iconv_prefix" ] && [ -d "$iconv_prefix" ]; then
+    export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --with-iconv=${iconv_prefix}"
+  fi
+
+  # Set library and include paths
+  export LDFLAGS="${LDFLAGS} -L${brew_prefix}/lib"
+  export CPPFLAGS="${CPPFLAGS} -I${brew_prefix}/include"
+}
+
 # Check OpenSSL version and PHP version compatibility
 check_openssl_compatibility() {
   local php_version=$1
@@ -213,6 +249,9 @@ check_openssl_compatibility() {
   fi
 }
 
+# Configure macOS dependencies first (applies to all PHP versions)
+setup_macos_dependencies "$version"
+
 # Check compatibility before building
 check_openssl_compatibility "$version"
 
@@ -285,12 +324,20 @@ setup_compiler_for_old_php() {
 
     # Platform-specific configuration
     if [[ $OSTYPE == "darwin"* ]]; then
-      # macOS specific configuration
+      # macOS specific configuration (bzip2/iconv already configured by setup_macos_dependencies)
       if command -v brew >/dev/null 2>&1; then
-        export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:---disable-werror --with-external-pcre --disable-fileinfo --with-bz2=$(brew --prefix bzip2) --with-iconv=$(brew --prefix libiconv)}"
-        # Set library paths for macOS
-        export LDFLAGS="${LDFLAGS:--L$(brew --prefix)/lib}"
-        export CPPFLAGS="${CPPFLAGS:--I$(brew --prefix)/include}"
+        export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:---disable-werror --with-external-pcre --disable-fileinfo}"
+        # Library paths already set by setup_macos_dependencies
+        if [ -z "$LDFLAGS" ]; then
+          local brew_lib_path
+          brew_lib_path=$(brew --prefix)
+          export LDFLAGS="-L${brew_lib_path}/lib"
+        fi
+        if [ -z "$CPPFLAGS" ]; then
+          local brew_include_path
+          brew_include_path=$(brew --prefix)
+          export CPPFLAGS="-I${brew_include_path}/include"
+        fi
       else
         export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:---disable-werror --with-external-pcre --disable-fileinfo}"
       fi
@@ -308,11 +355,20 @@ setup_compiler_for_old_php() {
     # Platform-specific configuration
     if [[ $OSTYPE == "darwin"* ]]; then
       # macOS specific configuration
+      # macOS specific configuration (bzip2/iconv already configured by setup_macos_dependencies)
       if command -v brew >/dev/null 2>&1; then
-        export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:---disable-werror --with-external-pcre --disable-fileinfo --with-bz2=$(brew --prefix bzip2) --with-iconv=$(brew --prefix libiconv)}"
-        # Set library paths for macOS
-        export LDFLAGS="${LDFLAGS:--L$(brew --prefix)/lib}"
-        export CPPFLAGS="${CPPFLAGS:--I$(brew --prefix)/include}"
+        export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:---disable-werror --with-external-pcre --disable-fileinfo}"
+        # Library paths already set by setup_macos_dependencies
+        if [ -z "$LDFLAGS" ]; then
+          local brew_lib_path
+          brew_lib_path=$(brew --prefix)
+          export LDFLAGS="-L${brew_lib_path}/lib"
+        fi
+        if [ -z "$CPPFLAGS" ]; then
+          local brew_include_path
+          brew_include_path=$(brew --prefix)
+          export CPPFLAGS="-I${brew_include_path}/include"
+        fi
       else
         export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:---disable-werror --with-external-pcre --disable-fileinfo}"
       fi
