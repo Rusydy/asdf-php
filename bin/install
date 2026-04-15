@@ -48,6 +48,42 @@ if [ "$version" = "latest" ]; then
   echo "Resolved 'latest' to version $version"
 fi
 
+# Homebrew keg-only packages like bzip2 and libiconv may have a broken or empty opt
+# symlink because Homebrew does not auto-link them; repairing it in-place ensures that
+# both the build-time rpath and macOS's dyld use the same opt path at runtime, since
+# the library's embedded install_name was set to the opt path when it was originally built
+resolve_brew_package_prefix() {
+  local package=$1
+  local opt_prefix
+  opt_prefix=$(brew --prefix "$package" 2>/dev/null || echo "")
+
+  if [ -z "$opt_prefix" ]; then
+    echo ""
+    return 0
+  fi
+
+  # When the opt symlink exists but its include directory is absent the symlink is stale;
+  # replacing it with a direct symlink to the versioned Cellar directory makes rpath in
+  # compiled binaries resolve correctly at runtime because macOS dyld follows the
+  # library's embedded install_name which was originally set to the opt path
+  if [ ! -d "${opt_prefix}/include" ]; then
+    local cellar_base
+    cellar_base=$(brew --cellar "$package" 2>/dev/null || echo "")
+    if [ -n "$cellar_base" ] && [ -d "$cellar_base" ]; then
+      local cellar_version_dir
+      cellar_version_dir=$(find "$cellar_base" -maxdepth 1 -mindepth 1 -type d | head -1)
+      if [ -n "$cellar_version_dir" ] && [ -d "${cellar_version_dir}/include" ]; then
+        # Remove the stale opt entry and replace it with a proper symlink so that the
+        # opt path used in -Wl,-rpath matches the install_name baked into the dylib
+        rm -rf "$opt_prefix"
+        ln -s "$cellar_version_dir" "$opt_prefix"
+      fi
+    fi
+  fi
+
+  echo "$opt_prefix"
+}
+
 # Configure macOS-specific dependencies for all PHP versions
 setup_macos_dependencies() {
   local php_version=$1
@@ -65,9 +101,9 @@ setup_macos_dependencies() {
   local brew_prefix
   brew_prefix=$(brew --prefix)
   local bzip2_prefix
-  bzip2_prefix=$(brew --prefix bzip2 2>/dev/null || echo "")
+  bzip2_prefix=$(resolve_brew_package_prefix bzip2)
   local iconv_prefix
-  iconv_prefix=$(brew --prefix libiconv 2>/dev/null || echo "")
+  iconv_prefix=$(resolve_brew_package_prefix libiconv)
 
   # Configure bzip2 if available
   if [ -n "$bzip2_prefix" ] && [ -d "$bzip2_prefix" ]; then
@@ -82,6 +118,62 @@ setup_macos_dependencies() {
   # Set library and include paths
   export LDFLAGS="${LDFLAGS} -L${brew_prefix}/lib"
   export CPPFLAGS="${CPPFLAGS} -I${brew_prefix}/include"
+}
+
+# php-build's configure_package sets CXXFLAGS="-std=c++11 -stdlib=libc++ -DU_USING_ICU_NAMESPACE=1"
+# when CXXFLAGS is empty and icu4c > 61 is present on macOS (see php-build#499).  For PHP 8.5+
+# that -std=c++11 flag causes configure's C++17 feature check to fail because the last -std= flag
+# wins when multiple ones are present in the compiler invocation.  We must either strip the stale
+# flag from an inherited CXXFLAGS, or — when CXXFLAGS is empty — pre-populate it with the same
+# ICU compatibility flags php-build would use but with -std=c++17, so that php-build's
+# [[ -z "$CXXFLAGS" ]] guard never fires and the c++11 override never happens.
+sanitize_cxxflags_for_modern_php() {
+  local php_version=$1
+  local php_major
+  php_major=$(echo "$php_version" | cut -d. -f1)
+  local php_minor
+  php_minor=$(echo "$php_version" | cut -d. -f2)
+
+  # Only PHP 8.5+ introduced the C++17 build requirement
+  local requires_cxx17=false
+  if [ "$php_major" -gt 8 ]; then
+    requires_cxx17=true
+  elif [ "$php_major" -eq 8 ] && [ "$php_minor" -ge 5 ]; then
+    requires_cxx17=true
+  fi
+
+  if [ "$requires_cxx17" != true ]; then
+    return 0
+  fi
+
+  # Strip any existing -std=c++ flag to prevent old standards from blocking the C++17 check
+  local stripped_cxxflags
+  stripped_cxxflags=$(echo "${CXXFLAGS:-}" | sed 's/-std=c++[^ ]*//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+  # When CXXFLAGS was empty, php-build would normally inject "-std=c++11 -stdlib=libc++
+  # -DU_USING_ICU_NAMESPACE=1" (for icu4c > 61) or "-std=c++11 -stdlib=libc++" (for icu4c > 59).
+  # Mirror that logic here with -std=c++17 so php-build's [[ -z "$CXXFLAGS" ]] guard is never
+  # triggered and the c++11 flag is never written into the configure environment.
+  if [ -z "$stripped_cxxflags" ] && [[ $OSTYPE == "darwin"* ]] && command -v brew >/dev/null 2>&1; then
+    local icu_prefix
+    icu_prefix=$(brew --prefix icu4c 2>/dev/null || echo "")
+    if [ -n "$icu_prefix" ] && [ -e "$icu_prefix" ]; then
+      local icu_version
+      icu_version=$("${icu_prefix}/bin/icu-config" --version 2>/dev/null || echo "0")
+      if [[ "$icu_version" > "61" ]]; then
+        stripped_cxxflags="-stdlib=libc++ -DU_USING_ICU_NAMESPACE=1"
+      elif [[ "$icu_version" > "59" ]]; then
+        stripped_cxxflags="-stdlib=libc++"
+      fi
+    fi
+  fi
+
+  # Set C++17 explicitly as it is the minimum standard PHP 8.5+ requires to build
+  if [ -n "$stripped_cxxflags" ]; then
+    export CXXFLAGS="${stripped_cxxflags} -std=c++17"
+  else
+    export CXXFLAGS="-std=c++17"
+  fi
 }
 
 # Check OpenSSL version and PHP version compatibility
@@ -408,10 +500,17 @@ if [ "${PHP_WITHOUT_PEAR:-no}" != "no" ]; then
   export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --without-pear"
 fi
 
-# Pass through concurrency settings
-if [ -n "$ASDF_CONCURRENCY" ]; then
+# php-build does not read ASDF_CONCURRENCY directly, so it must be translated into
+# PHP_BUILD_EXTRA_MAKE_ARGUMENTS; without this the build ignores the caller's intent
+setup_build_concurrency() {
+  if [ -z "${ASDF_CONCURRENCY:-}" ]; then
+    return 0
+  fi
+
   export PHP_BUILD_EXTRA_MAKE_ARGUMENTS="-j${ASDF_CONCURRENCY}"
-fi
+}
+
+setup_build_concurrency
 
 # Patch php-build definition files to include libxml2 compatibility
 patch_php_build_definitions() {
@@ -586,6 +685,11 @@ EOF
   chmod +x "$wrapper_script"
   echo "$wrapper_script"
 }
+
+# A stale CXXFLAGS=-std=c++11 from prior ICU-based PHP installations must be cleared
+# before php-build runs, otherwise PHP 8.5+'s C++17 configure check fails despite
+# having a capable compiler
+sanitize_cxxflags_for_modern_php "$version"
 
 echo "Building PHP ${version}..."
 
