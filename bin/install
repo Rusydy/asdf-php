@@ -158,11 +158,12 @@ sanitize_cxxflags_for_modern_php() {
     local icu_prefix
     icu_prefix=$(brew --prefix icu4c 2>/dev/null || echo "")
     if [ -n "$icu_prefix" ] && [ -e "$icu_prefix" ]; then
-      local icu_version
+      local icu_version icu_major
       icu_version=$("${icu_prefix}/bin/icu-config" --version 2>/dev/null || echo "0")
-      if [[ "$icu_version" > "61" ]]; then
+      icu_major=$(echo "$icu_version" | cut -d. -f1)
+      if [ "$icu_major" -gt 61 ]; then
         stripped_cxxflags="-stdlib=libc++ -DU_USING_ICU_NAMESPACE=1"
-      elif [[ "$icu_version" > "59" ]]; then
+      elif [ "$icu_major" -gt 59 ]; then
         stripped_cxxflags="-stdlib=libc++"
       fi
     fi

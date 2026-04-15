@@ -9,7 +9,7 @@ setup() {
 
   # Extract only the target function to avoid executing the rest of the install
   # script which has side effects (php-build setup, version resolution, etc.)
-  sed -n '/^# Prior PHP installations via ICU/,/^}$/p' \
+  sed -n '/^sanitize_cxxflags_for_modern_php()/,/^}$/p' \
     "${PLUGIN_DIR}/bin/install" > "${TEST_TEMP_DIR}/function.sh"
   source "${TEST_TEMP_DIR}/function.sh"
 }
