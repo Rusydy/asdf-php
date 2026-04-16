@@ -161,8 +161,17 @@ jobs:
             if [ "${{ matrix.is_legacy }}" = "true" ]; then
               echo "=== Build failed - gathering diagnostics ==="
               echo "Environment: CC=$CC, ac_cv_prog_CC=$ac_cv_prog_CC"
-              find /tmp -name "config.log" -path "*/php-build/source/${{ matrix.version }}/*" -exec tail -50 {} \;
-              find /tmp -name "php-build.${{ matrix.version }}.*.log" -exec tail -100 {} \;
+              # On macOS, php-build writes its log to $TMPDIR (/var/folders/…), not /tmp
+              # Search both locations so diagnostics work on macOS and Linux
+              SEARCH_DIRS="${TMPDIR:-} /tmp /var/folders"
+              for _sdir in $SEARCH_DIRS; do
+                [ -d "$_sdir" ] || continue
+                find "$_sdir" -maxdepth 6 -name "php-build.${{ matrix.version }}.*.log" 2>/dev/null | while read -r _log; do
+                  echo "=== $( basename \"$_log\" ) ==="
+                  tail -150 "$_log"
+                done
+              done
+              find /var/tmp -maxdepth 6 -name "config.log" -path "*/${{ matrix.version }}/*" 2>/dev/null -exec tail -50 {} \; || true
             fi
             exit 1
           fi

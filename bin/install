@@ -105,19 +105,27 @@ setup_macos_dependencies() {
   local iconv_prefix
   iconv_prefix=$(resolve_brew_package_prefix libiconv)
 
-  # Configure bzip2 if available
+  # Configure bzip2 if available (guard against duplication when already set by CI/env)
   if [ -n "$bzip2_prefix" ] && [ -d "$bzip2_prefix" ]; then
-    export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --with-bz2=${bzip2_prefix}"
+    if [[ ${PHP_BUILD_CONFIGURE_OPTS:-} != *"--with-bz2="* ]]; then
+      export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --with-bz2=${bzip2_prefix}"
+    fi
   fi
 
-  # Configure libiconv if available
+  # Configure libiconv if available (guard against duplication when already set by CI/env)
   if [ -n "$iconv_prefix" ] && [ -d "$iconv_prefix" ]; then
-    export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --with-iconv=${iconv_prefix}"
+    if [[ ${PHP_BUILD_CONFIGURE_OPTS:-} != *"--with-iconv="* ]]; then
+      export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --with-iconv=${iconv_prefix}"
+    fi
   fi
 
-  # Set library and include paths
-  export LDFLAGS="${LDFLAGS} -L${brew_prefix}/lib"
-  export CPPFLAGS="${CPPFLAGS} -I${brew_prefix}/include"
+  # Set library and include paths (idempotent: skip if already present to avoid duplicates)
+  if [[ ${LDFLAGS:-} != *"-L${brew_prefix}/lib"* ]]; then
+    export LDFLAGS="${LDFLAGS:+${LDFLAGS} }-L${brew_prefix}/lib"
+  fi
+  if [[ ${CPPFLAGS:-} != *"-I${brew_prefix}/include"* ]]; then
+    export CPPFLAGS="${CPPFLAGS:+${CPPFLAGS} }-I${brew_prefix}/include"
+  fi
 }
 
 # php-build's configure_package sets CXXFLAGS="-std=c++11 -stdlib=libc++ -DU_USING_ICU_NAMESPACE=1"
@@ -442,7 +450,14 @@ setup_compiler_for_old_php() {
     export MAKE_OPTS="${MAKE_OPTS:--j1}"
   elif [ "$php_major" -eq 8 ] && [ "$php_minor" -eq 0 ] && [ "${php_patch:-0}" -lt 20 ]; then
     # PHP 8.0.0-8.0.19 specific flags
-    export CFLAGS="${CFLAGS:--Wno-error -Wno-deprecated-declarations -Wno-implicit-function-declaration -Wno-int-conversion -Wno-stringop-overflow -O0}"
+    # -Wno-incompatible-pointer-types-discards-qualifiers: Apple Clang 16 (Xcode 16 /
+    # macOS 15 GitHub runners) treats const-qualifier discards as a hard error.  PHP 8.0.x
+    # openssl.c passes const RSA * where non-const RSA * is required with OpenSSL 3.6+.
+    export CFLAGS="${CFLAGS:--Wno-error -Wno-deprecated-declarations -Wno-implicit-function-declaration -Wno-int-conversion -Wno-stringop-overflow -Wno-incompatible-pointer-types-discards-qualifiers -O0}"
+    # Also append the flag when CFLAGS was preset externally without it
+    if [[ ${CFLAGS} != *"-Wno-incompatible-pointer-types-discards-qualifiers"* ]]; then
+      export CFLAGS="${CFLAGS} -Wno-incompatible-pointer-types-discards-qualifiers"
+    fi
     export CXXFLAGS="${CXXFLAGS:--Wno-error -Wno-deprecated-declarations -O0}"
 
     # Platform-specific configuration
@@ -454,7 +469,12 @@ setup_compiler_for_old_php() {
         # runs, so php-build's [[ -z "$CXXFLAGS" ]] guard never fires and its own
         # "-std=c++11 -stdlib=libc++ -DU_USING_ICU_NAMESPACE=1" is never added.  We must
         # therefore inject the equivalent flags here, upgrading c++11 to c++17.
-        export CXXFLAGS="${CXXFLAGS} -std=c++17 -stdlib=libc++ -DU_USING_ICU_NAMESPACE=1"
+        # Guard against duplication when CXXFLAGS was pre-set by CI workflow.
+        if [[ ${CXXFLAGS:-} != *"-std=c++17"* ]]; then
+          export CXXFLAGS="${CXXFLAGS:+${CXXFLAGS} }-std=c++17 -stdlib=libc++ -DU_USING_ICU_NAMESPACE=1"
+        elif [[ ${CXXFLAGS:-} != *"-DU_USING_ICU_NAMESPACE=1"* ]]; then
+          export CXXFLAGS="${CXXFLAGS} -DU_USING_ICU_NAMESPACE=1"
+        fi
 
         # --with-external-gd tells PHP to link Homebrew's pre-compiled libgd instead of
         # compiling the bundled libgd source.  Without this, CPPFLAGS=-I/usr/local/include
