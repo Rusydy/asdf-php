@@ -72,7 +72,7 @@ php -v
 asdf uninstall php 8.0.0
 asdf plugin remove php
 asdf plugin add php $(pwd)
-asdf install php 8.0.0
+ASDF_CONCURRENCY=8 asdf install php 8.0.0
 
 # monitor installation progress
 tail -f /tmp/php-build.8.0.0.*.log
@@ -90,7 +90,7 @@ php -v
 asdf uninstall php 7.4.14
 asdf plugin remove php
 asdf plugin add php $(pwd)
-asdf install php 7.4.14
+ASDF_CONCURRENCY=8 asdf install php 7.4.14
 
 # monitor installation progress
 tail -f /tmp/php-build.7.4.14.*.log
