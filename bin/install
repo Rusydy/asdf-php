@@ -412,14 +412,14 @@ setup_compiler_for_old_php() {
   # Set conservative build flags for old PHP versions (only if not already set)
   if [ "$php_major" -eq 7 ] && [ "$php_minor" -eq 4 ]; then
     # PHP 7.4 specific flags
-    export CFLAGS="${CFLAGS:--Wno-error -Wno-deprecated-declarations -Wno-implicit-function-declaration -Wno-stringop-overflow -O0}"
+    export CFLAGS="${CFLAGS:--Wno-error -Wno-deprecated-declarations -Wno-implicit-function-declaration -Wno-int-conversion -Wno-stringop-overflow -O0}"
     export CXXFLAGS="${CXXFLAGS:--Wno-error -Wno-deprecated-declarations -O0}"
 
     # Platform-specific configuration
     if [[ $OSTYPE == "darwin"* ]]; then
       # macOS specific configuration (bzip2/iconv already configured by setup_macos_dependencies)
       if command -v brew >/dev/null 2>&1; then
-        export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:---disable-werror --with-external-pcre --disable-fileinfo}"
+        export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --disable-werror --with-external-pcre --disable-fileinfo"
         # Library paths already set by setup_macos_dependencies
         if [ -z "$LDFLAGS" ]; then
           local brew_lib_path
@@ -432,25 +432,43 @@ setup_compiler_for_old_php() {
           export CPPFLAGS="-I${brew_include_path}/include"
         fi
       else
-        export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:---disable-werror --with-external-pcre --disable-fileinfo}"
+        export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --disable-werror --with-external-pcre --disable-fileinfo"
       fi
     else
       # Linux specific configuration
-      export LDFLAGS="${LDFLAGS:--Wl,--no-as-needed}"
-      export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:---disable-werror --with-external-pcre --disable-fileinfo --without-tidy}"
+      export LDFLAGS="${LDFLAGS:+${LDFLAGS} }-Wl,--no-as-needed"
+      export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --disable-werror --with-external-pcre --disable-fileinfo --without-tidy"
     fi
     export MAKE_OPTS="${MAKE_OPTS:--j1}"
   elif [ "$php_major" -eq 8 ] && [ "$php_minor" -eq 0 ] && [ "${php_patch:-0}" -lt 20 ]; then
     # PHP 8.0.0-8.0.19 specific flags
-    export CFLAGS="${CFLAGS:--Wno-error -Wno-deprecated-declarations -Wno-implicit-function-declaration -Wno-stringop-overflow -O0}"
+    export CFLAGS="${CFLAGS:--Wno-error -Wno-deprecated-declarations -Wno-implicit-function-declaration -Wno-int-conversion -Wno-stringop-overflow -O0}"
     export CXXFLAGS="${CXXFLAGS:--Wno-error -Wno-deprecated-declarations -O0}"
 
     # Platform-specific configuration
     if [[ $OSTYPE == "darwin"* ]]; then
-      # macOS specific configuration
       # macOS specific configuration (bzip2/iconv already configured by setup_macos_dependencies)
       if command -v brew >/dev/null 2>&1; then
-        export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:---disable-werror --with-external-pcre --disable-fileinfo}"
+        # ICU 74+ headers require C++17 features (enable_if_t, void_t, is_same_v, auto in
+        # template parameters).  setup_compiler_for_old_php sets CXXFLAGS before php-build
+        # runs, so php-build's [[ -z "$CXXFLAGS" ]] guard never fires and its own
+        # "-std=c++11 -stdlib=libc++ -DU_USING_ICU_NAMESPACE=1" is never added.  We must
+        # therefore inject the equivalent flags here, upgrading c++11 to c++17.
+        export CXXFLAGS="${CXXFLAGS} -std=c++17 -stdlib=libc++ -DU_USING_ICU_NAMESPACE=1"
+
+        # --with-external-gd tells PHP to link Homebrew's pre-compiled libgd instead of
+        # compiling the bundled libgd source.  Without this, CPPFLAGS=-I/usr/local/include
+        # causes Homebrew's gd.h (interpolation_method takes 2 doubles) to shadow the
+        # bundled libgd/gd.h (1 double), producing incompatible-function-pointer-types and
+        # too-few-arguments hard errors in gd_interpolation.c on Apple Clang 16+.
+        local gd_prefix
+        gd_prefix=$(brew --prefix gd 2>/dev/null || echo "")
+        if [ -n "$gd_prefix" ] && [ -d "$gd_prefix" ]; then
+          export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:+${PKG_CONFIG_PATH}:}${gd_prefix}/lib/pkgconfig"
+          export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --disable-werror --with-external-pcre --disable-fileinfo --with-external-gd"
+        else
+          export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --disable-werror --with-external-pcre --disable-fileinfo"
+        fi
         # Library paths already set by setup_macos_dependencies
         if [ -z "$LDFLAGS" ]; then
           local brew_lib_path
@@ -463,12 +481,12 @@ setup_compiler_for_old_php() {
           export CPPFLAGS="-I${brew_include_path}/include"
         fi
       else
-        export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:---disable-werror --with-external-pcre --disable-fileinfo}"
+        export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --disable-werror --with-external-pcre --disable-fileinfo"
       fi
     else
       # Linux specific configuration
-      export LDFLAGS="${LDFLAGS:--Wl,--no-as-needed}"
-      export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:---disable-werror --with-external-pcre --disable-fileinfo --without-tidy}"
+      export LDFLAGS="${LDFLAGS:+${LDFLAGS} }-Wl,--no-as-needed"
+      export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS} --disable-werror --with-external-pcre --disable-fileinfo --without-tidy"
     fi
     export MAKE_OPTS="${MAKE_OPTS:--j1}"
   fi
@@ -572,6 +590,20 @@ patch_php_build_definitions() {
       if [ -f "$def_file" ] && ! grep -q "php-8.0-icu-74-compat.patch" "$def_file"; then
         awk '/patch_file "php-8.0-libxml2-2.12-compat.patch"/ {print; print "patch_file \"php-8.0-icu-74-compat.patch\""; next} {print}' "$def_file" >"$def_file.tmp" && mv "$def_file.tmp" "$def_file"
         echo "Added ICU 74+ compatibility patch to PHP $php_version definition"
+      fi
+    fi
+
+    # intl C++17 patch — ext/intl/config.m4 in PHP 8.0.x hardcodes PHP_CXX_COMPILE_STDCXX(11)
+    # which causes the generated Makefile to append -std=c++11 to every intl compile rule.
+    # That overrides any -std=c++17 in CXXFLAGS, so ICU 74+/78+ headers that use C++17
+    # features (enable_if_t, void_t, is_same_v, if constexpr) fail to compile.
+    # Patching config.m4 to require C++17 fixes the generated Makefile rules; buildconf
+    # regenerates configure from the patched config.m4 before the build starts.
+    if [ -f "${PLUGIN_DIR}/patches/php-8.0-intl-cxx17.patch" ]; then
+      cp "${PLUGIN_DIR}/patches/php-8.0-intl-cxx17.patch" "$php_build_patches/"
+      if [ -f "$def_file" ] && ! grep -q "php-8.0-intl-cxx17.patch" "$def_file"; then
+        awk '/patch_file "php-8.0-icu-74-compat.patch"/ {print; print "patch_file \"php-8.0-intl-cxx17.patch\""; next} {print}' "$def_file" >"$def_file.tmp" && mv "$def_file.tmp" "$def_file"
+        echo "Added intl C++17 patch to PHP $php_version definition"
       fi
     fi
   fi
