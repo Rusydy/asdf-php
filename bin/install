@@ -626,6 +626,15 @@ patch_php_build_definitions() {
         echo "Added intl C++17 patch to PHP $php_version definition"
       fi
     fi
+
+    # libxml2 const handler patch
+    if [ -f "${PLUGIN_DIR}/patches/php-8.0-libxml2-const-handler.patch" ]; then
+      cp "${PLUGIN_DIR}/patches/php-8.0-libxml2-const-handler.patch" "$php_build_patches/"
+      if [ -f "$def_file" ] && ! grep -q "php-8.0-libxml2-const-handler.patch" "$def_file"; then
+        awk '/patch_file "php-8.0-intl-cxx17.patch"/ {print; print "patch_file \"php-8.0-libxml2-const-handler.patch\""; next} {print}' "$def_file" >"$def_file.tmp" && mv "$def_file.tmp" "$def_file"
+        echo "Added libxml2 const handler patch to PHP $php_version definition"
+      fi
+    fi
   fi
 }
 
