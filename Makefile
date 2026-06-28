@@ -34,9 +34,5 @@ test-verbose:
 	fi
 .PHONY: test-verbose
 
-verify:
-	@./tests/verify_bzip2_fix.sh
-.PHONY: verify
-
 check: fmt-check lint test
 .PHONY: check
