@@ -631,58 +631,6 @@ patch_php_build_definitions() {
 
 patch_php_build_definitions "$version"
 
-# Simple approach: ensure compiler variables are properly exported for configure
-validate_compiler_setup() {
-  local php_version=$1
-  local php_major
-  php_major=$(echo "$php_version" | cut -d. -f1)
-  local php_minor
-  php_minor=$(echo "$php_version" | cut -d. -f2)
-  local php_patch
-  php_patch=$(echo "$php_version" | cut -d. -f3 | sed 's/[^0-9].*//')
-
-  # Only validate for problematic versions
-  if ! { [ "$php_major" -eq 7 ] && [ "$php_minor" -eq 4 ]; } && ! { [ "$php_major" -eq 8 ] && [ "$php_minor" -eq 0 ] && [ "${php_patch:-0}" -lt 20 ]; }; then
-    return 0
-  fi
-
-  echo "=== Validating Compiler Setup for PHP $php_version ==="
-
-  # Verify all required compiler variables are set
-  if [ -z "$CC" ] || [ -z "$CXX" ]; then
-    echo "✗ CC or CXX not set"
-    exit 1
-  fi
-
-  if ! command -v "$CC" >/dev/null 2>&1; then
-    echo "✗ Compiler $CC not found"
-    exit 1
-  fi
-
-  echo "✓ Compiler validation passed"
-  echo "  CC=$CC"
-  echo "  CXX=$CXX"
-  echo "  ac_cv_prog_CC=$ac_cv_prog_CC"
-  echo "  ac_cv_prog_CXX=$ac_cv_prog_CXX"
-
-  # Test basic compilation to ensure compiler works
-  local test_c_file test_exe_file
-  test_c_file=$(mktemp)
-  test_exe_file="${test_c_file}_exe"
-  mv "$test_c_file" "${test_c_file}.c"
-  test_c_file="${test_c_file}.c"
-  echo 'int main() { return 0; }' >"$test_c_file"
-
-  if "$CC" -o "$test_exe_file" "$test_c_file" 2>/dev/null; then
-    echo "✓ Basic compilation test passed"
-    rm -f "$test_c_file" "$test_exe_file"
-  else
-    echo "✗ Basic compilation test failed"
-    rm -f "$test_c_file" "$test_exe_file"
-    exit 1
-  fi
-}
-
 # Create environment validation and preparation wrapper for php-build
 prepare_php_build_environment() {
   local php_version=$1
@@ -745,9 +693,6 @@ EOF
 sanitize_cxxflags_for_modern_php "$version"
 
 echo "Building PHP ${version}..."
-
-# Validate compiler setup for old PHP versions
-validate_compiler_setup "$version"
 
 # For problematic PHP versions, use environment wrapper
 php_major=$(echo "$version" | cut -d. -f1)
