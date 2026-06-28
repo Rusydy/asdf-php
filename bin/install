@@ -644,6 +644,15 @@ patch_php_build_definitions() {
         echo "Added libxml2 ATTRIBUTE_UNUSED compat patch to PHP $php_version definition"
       fi
     fi
+
+    # bcmath K&R to ANSI C patch
+    if [ -f "${PLUGIN_DIR}/patches/php-8.0-bcmath-knr-to-ansi.patch" ]; then
+      cp "${PLUGIN_DIR}/patches/php-8.0-bcmath-knr-to-ansi.patch" "$php_build_patches/"
+      if [ -f "$def_file" ] && ! grep -q "php-8.0-bcmath-knr-to-ansi.patch" "$def_file"; then
+        awk '/patch_file "php-8.0-libxml2-attribute-unused.patch"/ {print; print "patch_file \"php-8.0-bcmath-knr-to-ansi.patch\""; next} {print}' "$def_file" >"$def_file.tmp" && mv "$def_file.tmp" "$def_file"
+        echo "Added bcmath K&R to ANSI C patch to PHP $php_version definition"
+      fi
+    fi
   fi
 }
 
