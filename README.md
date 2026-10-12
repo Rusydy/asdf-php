@@ -23,8 +23,8 @@ This plugin uses [php-build](https://github.com/php-build/php-build) as the unde
 ```bash
 sudo apt-get install -y autoconf bison build-essential curl gettext git libbz2-dev \
   libgd-dev libcurl4-openssl-dev libedit-dev libicu-dev libjpeg-dev \
-  libmysqlclient-dev libonig-dev libpng-dev libpq-dev libreadline-dev \
-  libsqlite3-dev libssl-dev libxml2-dev libzip-dev libtidy-dev openssl \
+  libgmp-dev libmysqlclient-dev libonig-dev libpng-dev libpq-dev libreadline-dev \
+  libsodium-dev libsqlite3-dev libssl-dev libxml2-dev libzip-dev libtidy-dev openssl \
   pkg-config re2c zlib1g-dev ca-certificates wget libtool automake \
   gcc g++ libxslt1-dev m4 libtool-bin
 ```

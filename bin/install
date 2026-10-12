@@ -357,8 +357,32 @@ check_openssl_compatibility() {
   fi
 }
 
+# php-build's default configure options leave out sodium and gmp, so they must be enabled
+# here whenever pkg-config can find their libraries (apt's -dev packages or Homebrew's).
+# The flags carry no DIR because PHP < 8.4 then expects DIR/include/gmp.h, which Debian's
+# multiarch layout lacks; the default compiler paths (plus Homebrew's from
+# setup_macos_dependencies) find both. Any flag for them in PHP_CONFIGURE_OPTIONS is left to the user
+setup_optional_extensions() {
+  local pair package extension
+  for pair in libsodium:sodium gmp:gmp; do
+    package=${pair%%:*}
+    extension=${pair#*:}
+
+    if [[ "${PHP_BUILD_CONFIGURE_OPTS:-} ${PHP_CONFIGURE_OPTIONS:-}" == *"-${extension}"* ]]; then
+      continue
+    fi
+
+    if pkg-config --exists "$package" 2>/dev/null; then
+      export PHP_BUILD_CONFIGURE_OPTS="${PHP_BUILD_CONFIGURE_OPTS:-} --with-${extension}"
+    else
+      echo "${package} not found, building without the ${extension} extension"
+    fi
+  done
+}
+
 # Configure macOS dependencies first (applies to all PHP versions)
 setup_macos_dependencies "$version"
+setup_optional_extensions
 
 # Check compatibility before building
 check_openssl_compatibility "$version"
