@@ -2,13 +2,13 @@
 
 Below are the steps to install different versions of PHP using asdf in local environment.
 
-## install 8.5.4
+## install 8.5.11 
 
 ```bash
-asdf uninstall php 8.5.4 # currently 8.5.4 as of 2026-04-07
+asdf uninstall php 8.5.11 
 asdf plugin remove php
 asdf plugin add php $(pwd)
-ASDF_CONCURRENCY=8 asdf install php 8.5.4
+ASDF_CONCURRENCY=8 asdf install php 8.5.11 
 ```
 
 ## install 8.5.1

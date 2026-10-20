@@ -136,7 +136,7 @@ setup_macos_dependencies() {
 }
 
 # php-build's configure_package sets CXXFLAGS="-std=c++11 -stdlib=libc++ -DU_USING_ICU_NAMESPACE=1"
-# when CXXFLAGS is empty and icu4c > 61 is present on macOS (see php-build#499).  For PHP 8.5+
+# when CXXFLAGS is empty and icu4c > 61 is present on macOS (see php-build#499).  For PHP 8.1.33+, 8.2.19+, 8.3.7+, 8.4+
 # that -std=c++11 flag causes configure's C++17 feature check to fail because the last -std= flag
 # wins when multiple ones are present in the compiler invocation.  We must either strip the stale
 # flag from an inherited CXXFLAGS, or — when CXXFLAGS is empty — pre-populate it with the same
@@ -149,11 +149,18 @@ sanitize_cxxflags_for_modern_php() {
   local php_minor
   php_minor=$(echo "$php_version" | cut -d. -f2)
 
-  # Only PHP 8.5+ introduced the C++17 build requirement
+  # ext/intl/config.m4 requires C++17 once icu-uc >= 74. Only these releases have that check:
+  # 8.1.33+, 8.2.19+, 8.3.7+ and all of 8.4+. Earlier 8.1-8.3 patches and all of 8.0 still hardcode C++11.
+  local php_patch
+  php_patch=$(echo "$php_version" | cut -d. -f3 | sed 's/[^0-9].*//')
   local requires_cxx17=false
-  if [ "$php_major" -gt 8 ]; then
+  if [ "$php_major" -gt 8 ] || { [ "$php_major" -eq 8 ] && [ "$php_minor" -ge 4 ]; }; then
     requires_cxx17=true
-  elif [ "$php_major" -eq 8 ] && [ "$php_minor" -ge 5 ]; then
+  elif [ "$php_major" -eq 8 ] && [ "$php_minor" -eq 3 ] && [ "${php_patch:-0}" -ge 7 ]; then
+    requires_cxx17=true
+  elif [ "$php_major" -eq 8 ] && [ "$php_minor" -eq 2 ] && [ "${php_patch:-0}" -ge 19 ]; then
+    requires_cxx17=true
+  elif [ "$php_major" -eq 8 ] && [ "$php_minor" -eq 1 ] && [ "${php_patch:-0}" -ge 33 ]; then
     requires_cxx17=true
   fi
 
