@@ -853,6 +853,12 @@ else
   exit 1
 fi
 
+# Piping php -m into grep -q fails under pipefail: grep closes the pipe while php is still writing. Ask php instead.
+php_has_extension() {
+  # shellcheck disable=SC2016 # $argv is php's variable, so it must not expand in the shell
+  "$1" -r 'exit(extension_loaded($argv[1]) ? 0 : 1);' "$2"
+}
+
 # Install Composer globally (php-build doesn't do this by default)
 install_composer() {
   local bin_path="$install_path/bin"
@@ -864,13 +870,13 @@ install_composer() {
   echo "Temp directory: $temp_dir"
 
   # Check if PHP has required extensions
-  if ! "$bin_path"/php -m | grep -q "openssl"; then
+  if ! php_has_extension "$bin_path"/php openssl; then
     echo "⚠ PHP OpenSSL extension not available - required for Composer download"
     rm -rf "$temp_dir"
     return 1
   fi
 
-  if ! "$bin_path"/php -m | grep -q "curl"; then
+  if ! php_has_extension "$bin_path"/php curl; then
     echo "⚠ PHP curl extension not available - using fallback download method"
   fi
 
