@@ -32,7 +32,7 @@ sudo apt-get install -y autoconf bison build-essential curl gettext git libbz2-d
 ### macOS
 ```bash
 brew install autoconf automake bison freetype gd gettext icu4c krb5 \
-  libedit libiconv libjpeg libpng libxml2 libzip openssl@1.1 openssl@3 \
+  libedit libiconv libjpeg libpng libxml2 libzip openssl@3 \
   pkg-config re2c zlib bzip2
 ```
 
@@ -40,6 +40,10 @@ brew install autoconf automake bison freetype gd gettext icu4c krb5 \
 ```bash
 brew install gmp libsodium imagemagick tidy-html5
 ```
+
+`gmp` and `libsodium` are enabled automatically when pkg-config finds their libraries, on Linux and macOS. To skip one, add `--without-gmp` or `--without-sodium` to `PHP_CONFIGURE_OPTIONS`.
+
+`tidy` is part of the default build. On macOS, install `tidy-html5`, or build without tidy by setting `PHP_CONFIGURE_OPTIONS="--without-tidy"`.
 
 ## Installation
 
@@ -104,6 +108,8 @@ export PKG_CONFIG_PATH="/path/to/openssl-1.1/lib/pkgconfig:$PKG_CONFIG_PATH"
 export PHP_BUILD_CONFIGURE_OPTS="--with-openssl=/path/to/openssl-1.1"
 ```
 
+On macOS, when openssl@3 is installed, the plugin builds against it automatically. The openssl@4 headers do not compile PHP 8.3.x, so the plugin puts openssl@3 first in `PKG_CONFIG_PATH` and `LDFLAGS`, and adds `--with-openssl`. If you set `--with-openssl` or a `PKG_CONFIG_PATH` that starts with an OpenSSL directory yourself, the plugin leaves your settings alone.
+
 ### Build Configuration
 ```bash
 # Disable PEAR installation
@@ -115,13 +121,18 @@ export PHP_BUILD_XDEBUG_ENABLE=off
 # Custom compiler flags
 export CFLAGS="-Wno-error -O2"
 export CXXFLAGS="-Wno-error -O2"
+
+# Extra configure flags, added after the plugin's defaults (a later flag wins)
+export PHP_CONFIGURE_OPTIONS="--without-tidy"
 ```
 
 PHP 7.4 on macOS is built without Xdebug, because Xdebug 3.1.6 does not compile with the macOS toolchain.
 
+For PHP 8.1.33+, 8.2.19+, 8.3.7+ and 8.4+, the plugin sets `-std=c++17` itself, replacing any `-std=` in `CXXFLAGS`, because ICU 74+ needs C++17.
+
 ## Extensions and Composer
 
-**Composer** is installed globally alongside PHP by default.
+**Composer** is installed with each PHP version by default. Composer runs through `php`, so `composer` needs a PHP version selected in asdf, for example `asdf local php 8.3.29` in your project.
 
 **PECL Extensions:**
 ```bash
@@ -178,6 +189,9 @@ asdf install php 7.4.33
 ```
 
 ### macOS Issues
+- **`ERR_NUM_ERRORS` while compiling `ext/openssl`:** install `openssl@3` with `brew install openssl@3`. The plugin builds against it automatically when it is installed.
+- **`Cannot find libtidy`:** install `tidy-html5` with `brew install tidy-html5`, or build without tidy with `PHP_CONFIGURE_OPTIONS="--without-tidy"`.
+
 ```bash
 # If configure can't find libraries:
 export LDFLAGS="-L$(brew --prefix)/lib"

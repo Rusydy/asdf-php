@@ -2,6 +2,8 @@
 
 Below are the steps to install different versions of PHP using asdf in local environment.
 
+> **Warning:** `asdf plugin remove php` also deletes the PHP versions you have installed. `asdf plugin add php $(pwd)` clones the last commit, not your working tree, so commit your changes first. To pick up new commits without removing anything, run `asdf plugin update php`.
+
 ## install 8.5.11 
 
 ```bash
