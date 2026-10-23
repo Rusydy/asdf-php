@@ -44,6 +44,18 @@ if [ "$1" = "-r" ] && [[ "$2" == *extension_loaded* ]]; then
   [[ " ${MOCK_PHP_MODULES} " == *" $3 "* ]]
   exit $?
 fi
+# php composer-setup.php --install-dir=DIR --filename=composer: write the composer script the installer expects
+if [ "$1" = "composer-setup.php" ]; then
+  dir="${2#--install-dir=}"
+  printf '#!/usr/bin/env php\n' > "${dir}/composer"
+  chmod +x "${dir}/composer"
+  exit 0
+fi
+# php DIR/composer --version: answer with a fixed version
+if [[ "$1" == */composer && "$2" == "--version" ]]; then
+  echo "Composer version 9.9.9 (test)"
+  exit 0
+fi
 exit 1
 EOF
   chmod +x "${install_path}/bin/php"
@@ -85,4 +97,23 @@ EOF
   run grep -rn '| *grep -q' "${PLUGIN_DIR}/bin" "${PLUGIN_DIR}/lib"
 
   [ "${status}" -eq 1 ]
+}
+
+@test "should report the Composer version when php is not on PATH" {
+  export MOCK_PHP_MODULES="curl openssl"
+  # No php on PATH: the composer script's #!/usr/bin/env php shebang cannot run
+  export PATH="/usr/bin:/bin"
+  # The download is the only curl call that matters: write the installer file where the script expects it
+  curl() {
+    case "$*" in
+      *"-o composer-setup.php"*) echo "<?php" > composer-setup.php ;;
+      *) return 1 ;;
+    esac
+  }
+
+  run install_composer
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Composer verified: Composer version 9.9.9"* ]]
+  [[ "${output}" != *"Composer verified: unknown"* ]]
 }

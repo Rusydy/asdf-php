@@ -953,7 +953,8 @@ install_composer() {
   # Verify Composer was installed
   if [ -f "$bin_path/composer" ] && [ -x "$bin_path/composer" ]; then
     local composer_version
-    composer_version=$("$bin_path"/composer --version 2>/dev/null || echo "unknown")
+    # Run composer through the php just built: its #!/usr/bin/env php shebang needs php on PATH
+    composer_version=$("$bin_path"/php "$bin_path"/composer --version 2>/dev/null || echo "unknown")
     echo "✓ Composer verified: $composer_version"
     return 0
   else
